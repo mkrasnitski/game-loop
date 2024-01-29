@@ -54,34 +54,36 @@ mod helper {
 mod helper {
     use std::sync::Arc;
     use super::*;
+    use winit::error::EventLoopError;
     use winit::event::{Event, WindowEvent};
     use winit::event_loop::{ControlFlow, EventLoop};
     use winit::window::Window;
 
     pub use winit;
 
-    pub fn game_loop<G, U, R, H, T>(event_loop: EventLoop<T>, window: Arc<Window>, game: G, updates_per_second: u32, max_frame_time: f64, mut update: U, mut render: R, mut handler: H) -> !
+    pub fn game_loop<G, U, R, H, T>(event_loop: EventLoop<T>, window: Arc<Window>, game: G, updates_per_second: u32, max_frame_time: f64, mut update: U, mut render: R, mut handler: H) -> Result<(), EventLoopError>
         where G: 'static,
               U: FnMut(&mut GameLoop<G, Time, Arc<Window>>) + 'static,
               R: FnMut(&mut GameLoop<G, Time, Arc<Window>>) + 'static,
-              H: FnMut(&mut GameLoop<G, Time, Arc<Window>>, &Event<'_, T>) + 'static,
+              H: FnMut(&mut GameLoop<G, Time, Arc<Window>>, &Event<T>) + 'static,
               T: 'static,
     {
         let mut game_loop = GameLoop::new(game, updates_per_second, max_frame_time, window);
 
-        event_loop.run(move |event, _, control_flow| {
-            *control_flow = ControlFlow::Poll;
+        event_loop.run(|event, elwt| {
+            elwt.set_control_flow(ControlFlow::Poll);
 
             // Forward events to existing handlers.
             handler(&mut game_loop, &event);
 
             match event {
-                Event::RedrawRequested(_) => {
+                Event::WindowEvent { event: WindowEvent::RedrawRequested, .. } => {
                     if !game_loop.next_frame(&mut update, &mut render) {
-                        *control_flow = ControlFlow::Exit;
+                        elwt.exit();
+                        return;
                     }
                 },
-                Event::MainEventsCleared => {
+                Event::AboutToWait => {
                     game_loop.window.request_redraw();
                 },
                 Event::WindowEvent { event: WindowEvent::Occluded(occluded), .. } => {
